@@ -46,3 +46,10 @@ export class GitReleaseGuardError extends Error {
 export const DEFAULT_TEMPORARY_PREFIXES: readonly string[];
 export function planRetirements(options: RetirementOptions): Promise<RetirementPlan>;
 export function assertDeploymentSource(options: DeploymentSourceOptions): { target: string; sha: string };
+export interface RemoteDestinationOptions {
+  readonly expectedRemoteUrls: readonly string[];
+  readonly fetchUrls: readonly string[];
+  readonly pushUrls: readonly string[];
+}
+export function normalizeRemoteUrl(url: string): string;
+export function assertRemoteDestinations(options: RemoteDestinationOptions): { fetchUrl: string; pushUrl: string };

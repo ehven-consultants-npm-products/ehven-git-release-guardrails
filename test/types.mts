@@ -1,4 +1,5 @@
 import { planRetirements, assertDeploymentSource, type RetirementOptions, type ReviewedHead } from '../src/index.mjs';
+import { inspectRetirements, type InspectionOptions } from '../src/node/index.mjs';
 
 const input: RetirementOptions = {
   repository: 'example.test/team/project', permanent: ['main', 'live'], remote: {}, local: {},
@@ -17,3 +18,9 @@ const incomplete: ReviewedHead = { repository: input.repository, branch: 'fix/ta
 // @ts-expect-error The ancestry resolver must return a boolean or Promise<boolean>.
 planRetirements({ ...input, isAncestor: () => 'yes' });
 void incomplete;
+const inspection: InspectionOptions = { cwd: '/project', repository: input.repository, expectedRemoteUrls: ['https://example.test/team/project.git'], integrationBranch: 'main', permanent: ['main', 'live'] };
+const inspected = await inspectRetirements(inspection);
+const localOnly: 'unverified-local-cache' = inspected.remoteFreshness;
+void localOnly;
+// @ts-expect-error The inspector accepts endpoint data, not an arbitrary command runner.
+inspectRetirements({ ...inspection, execute: () => true });
