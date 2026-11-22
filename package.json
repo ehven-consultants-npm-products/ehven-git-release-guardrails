@@ -1,0 +1,14 @@
+{
+  "name": "@ehven/git-release-guardrails",
+  "version": "0.0.0-development.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Portable source guards and guarded branch-retirement tooling; private development candidate.",
+  "engines": { "node": "24.x" },
+  "exports": {
+    ".": { "types": "./src/index.d.mts", "import": "./src/index.mjs" }
+  },
+  "files": ["src"],
+  "scripts": { "test": "node --test test/*.test.mjs" }
+}

@@ -1,0 +1,35 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    name: Verify portable guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.22.3
+      # No install: this development candidate has no npm dependencies.
+      - run: npm test
+  required:
+    name: Required checks
+    if: always()
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require portable checks
+        env:
+          VERIFY: ${{ needs.verify.result }}
+        run: test "$VERIFY" = success
