@@ -234,7 +234,8 @@ this is not a sandbox for arbitrary Git installations or filesystem mounts.
 allowed 1..30,000). An optional `AbortSignal` cancels it. `maxOutputBytes` bounds
 combined stdout/stderr per command (default 4 MiB; allowed 1 KiB..16 MiB). UTF-8
 output is required. Command output and credential-bearing URLs are not copied
-into errors. Native local filesystem lookups precede the Git deadline.
+into errors. Native filesystem lookups are not cancelled by this Git-process
+deadline; use trusted local filesystem locations.
 
 Additional stable error codes include `ERR_REMOTE_URL`, `ERR_REMOTE_DESTINATION`,
 `ERR_REPOSITORY_PATH`, `ERR_REPOSITORY_ROOT`, `ERR_SHALLOW_HISTORY`,
