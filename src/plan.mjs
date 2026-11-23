@@ -11,7 +11,7 @@ export async function planRetirements(input) {
   const options = fields(input, ['repository', 'permanent', 'remote', 'local', 'reviewedHeads', 'temporaryPrefixes', 'objectFormat', 'isAncestor'], 'Planner options');
   const repository = text(options.repository, 'Repository identity');
   const format = objectFormat(options.objectFormat);
-  const permanent = branchList(options.permanent, 'Permanent branches', 2);
+  const permanent = branchList(options.permanent, 'Permanent branches');
   const remote = refMap(options.remote, format, 'Remote refs');
   const local = refMap(options.local, format, 'Local refs');
   const prefixes = list(options.temporaryPrefixes === undefined ? DEFAULT_TEMPORARY_PREFIXES : options.temporaryPrefixes, 'Temporary prefixes').map(prefix => {

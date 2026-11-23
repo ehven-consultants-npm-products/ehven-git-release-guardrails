@@ -22,10 +22,15 @@ export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBy
   return new Promise((resolve, reject) => {
     const out = [], err = [];
     let bytes = 0, failure, settled = false;
-    const child = spawn(executable, args, { cwd, env: inspectionEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    // Own a process group on POSIX so cancellation also stops Git helpers that
+    // inherited the output pipes. Never signal the caller's process group.
+    const ownGroup = process.platform !== 'win32';
+    const child = spawn(executable, args, { cwd, env: inspectionEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: ownGroup });
     function stop(code, message) {
       failure ??= new GitReleaseGuardError(code, message);
-      child.kill('SIGKILL');
+      if (ownGroup && child.pid) {
+        try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+      } else child.kill('SIGKILL');
     }
     const timer = setTimeout(() => stop('ERR_GIT_TIMEOUT', 'Git inspection exceeded its command deadline.'), timeoutMs);
     const abort = () => stop(signal.reason?.name === 'TimeoutError' ? 'ERR_GIT_TIMEOUT' : 'ERR_ABORTED', 'Inspection was cancelled or exceeded its deadline.');
