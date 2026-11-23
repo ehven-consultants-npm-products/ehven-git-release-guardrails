@@ -26,3 +26,8 @@ export interface InspectionResult {
   plan: RetirementPlan;
 }
 export function inspectRetirements(options: InspectionOptions): Promise<InspectionResult>;
+
+/** Declarative schemaVersion 1 data; paths/AbortSignal are supplied by the caller. */
+export type RetirementConfig = Omit<InspectionOptions, 'cwd' | 'signal'>;
+/** A regular, nonsymlink UTF-8 JSON file, at most 1 MiB; no executable config. */
+export function readRetirementConfig(file: string, options?: { readonly signal?: AbortSignal }): Promise<RetirementConfig>;

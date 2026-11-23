@@ -6,10 +6,11 @@ source identity. MIT licensed; zero npm runtime dependencies.
 ## Development status
 
 This private development candidate implements portable guards and bounded,
-local Git inspection through an optional Node entrypoint. The first complete
-release will also include a branch-retirement CLI. That CLI, network transport,
-backup/restore, guarded mutations/recovery and the optional Cloudflare deployment
-adapter are not yet available in this candidate.
+local Git inspection through an optional Node entrypoint, and a retirement CLI
+with a read-only preview command. The first complete release will also include
+verified backup/restore and guarded branch retirement. Network transport,
+backup/restore, guarded mutations/recovery and optional Cloudflare deployment
+are not yet available in this candidate.
 
 The development version is not published to npm. Do not replace an existing
 site integration with this partial candidate. Current verification uses Linux,
@@ -34,7 +35,7 @@ supplied commit IDs exist or that a review actually occurred.
 | Option | Contract |
 | --- | --- |
 | `repository` | Bounded nonempty consumer-owned repository identity. Use a canonical, credential-free value. Review matching uses exact string equality. |
-| `permanent` | Two to 100 distinct permanent short branch names. All corresponding remote heads must exist and identify the same target commit. |
+| `permanent` | One to 100 distinct permanent short branch names. All corresponding remote heads must exist and identify the same target commit. |
 | `remote`, `local` | Plain objects mapping short branch names to full commit IDs; null-prototype data objects are supported. At most 10,000 entries in each map. No accessor properties. |
 | `isAncestor(head, target)` | Required trusted resolver returning a boolean or Promise of a boolean. `true` means ancestry was established; `false` means it was not. A thrown/rejected error stops the plan. Bound transport time and cancellation in the resolver. |
 | `objectFormat` | `sha1` by default; explicitly select `sha256` for that object format. Mixed formats, abbreviated IDs, uppercase IDs and all-zero IDs are rejected. |
@@ -253,3 +254,85 @@ do not bypass it with forced cleanup.
 Fixtures cover ancestral and squashed work, changed target, alternate branches
 and both SHA-1/SHA-256 histories. They do not contact a remote or delete live refs.
 Synthetic fixtures are not a second real consumer or a full security assessment.
+
+## Retirement CLI preview
+
+The installed executable is `ehven-git-release-guardrails`. This development
+candidate supports preview only. A successful preview does not authorize cleanup.
+
+```sh
+ehven-git-release-guardrails --help
+ehven-git-release-guardrails --version
+ehven-git-release-guardrails preview --config ../retirement.json --cwd /path/to/repository
+ehven-git-release-guardrails preview --config ../retirement.json --cwd /path/to/repository --json
+```
+
+Supply a deliberate schemaVersion 1 JSON file:
+
+```json
+{
+  "schemaVersion": 1,
+  "repository": "example.test/team/project",
+  "expectedRemoteUrls": ["https://example.test/team/project.git"],
+  "remote": "origin",
+  "integrationBranch": "main",
+  "permanent": ["main"],
+  "temporaryPrefixes": ["docs/", "feat/", "fix/", "refactor/", "chore/"],
+  "reviewedHeads": [],
+  "timeoutMs": 10000,
+  "maxOutputBytes": 4194304
+}
+```
+
+The integration branch must be permanent. A single permanent branch is supported;
+multiple permanent remote branches must all identify the same accepted commit.
+Remote, temporary prefixes, reviews and inspection limits use the defaults and
+contracts described above. Unknown fields, duplicate JSON keys (including escaped
+aliases), invalid reviews and unsupported schema versions are refused. Store
+only credential-free endpoints and deliberately approved review records.
+
+Both paths resolve from the invocation directory. `--cwd` defaults to that
+directory; the config file's directory does not change the selected repository.
+Keep an external config outside the working tree, or commit/ignore it deliberately
+so the source passes clean-state inspection. The CLI never writes a config file.
+
+Configuration is UTF-8 JSON data only, at most 1 MiB and 32 nesting levels. No
+modules, shell commands, environment interpolation or automatic config discovery
+are supported. The loader requires a regular file and refuses a symlink at the
+final path component, directories and FIFOs. It checks observed file metadata
+before/after reading. Parent directories/filesystems and concurrent writers must
+be trusted; these checks are not a filesystem sandbox or an atomic path lock.
+Platforms without the required file-open protections are refused. Native file
+operations are not covered by the Git-process deadline.
+
+`readRetirementConfig(file, { signal? })` is also exported from the optional Node
+entrypoint. It returns inspection options without `cwd` or `signal`; supply those
+explicitly to `inspectRetirements`. It never runs Git. Review commit formats are
+checked internally for consistency and then against the actual repository during
+inspection. Cancellation is checked before and between file reads.
+
+With `--json`, success is one JSON object on stdout:
+
+```js
+{ schemaVersion: 1, ok: true, command: 'preview', result: inspection }
+```
+
+Refusals leave stdout empty and write one JSON object on stderr:
+
+```js
+{ schemaVersion: 1, ok: false, error: { code, message } }
+```
+
+Exit codes: 0 for success/help/version, 1 for a refused or failed inspection,
+2 for unsupported/repeated/missing CLI arguments, 130 for handled SIGINT and
+143 for handled SIGTERM. Help/version do not require Git or a config. Unknown
+commands and apply/fetch/backup/restore/deployment flags are refused. Human output
+lists temporary branches and proof bases, plus permanent alignment candidates.
+Returned repository data may be sensitive; choose where to retain CLI output.
+
+Configuration adds `ERR_CONFIG_FILE`, `ERR_CONFIG_JSON`, `ERR_CONFIG_SCHEMA`,
+`ERR_CONFIG_LIMIT`, `ERR_CONFIG_CHANGED`; the CLI adds `ERR_CLI_USAGE` and
+`ERR_CLI_FAILURE`. Raw parser/subprocess input is not echoed in refusal messages.
+On POSIX, cancellation/deadlines terminate the subprocess group owned by each
+command, including helpers sharing its output pipes. This is not a control for
+arbitrary daemonized processes. Current executable verification remains Linux.

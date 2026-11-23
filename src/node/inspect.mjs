@@ -53,7 +53,7 @@ export async function inspectRetirements(input) {
   const remote = options.remote === undefined ? 'origin' : text(options.remote, 'Remote name', 64);
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u.test(remote) || remote.includes('..')) fail('ERR_INPUT', 'Use a supported simple remote name.');
   const integration = branch(options.integrationBranch, 'Integration branch');
-  const permanent = branchList(options.permanent, 'Permanent branches', 2);
+  const permanent = branchList(options.permanent, 'Permanent branches');
   if (!permanent.includes(integration)) fail('ERR_INPUT', 'The integration branch must be permanent.');
   // Validate expected endpoints before starting a subprocess; preserve an owned snapshot.
   const expectedRemoteUrls = list(options.expectedRemoteUrls, 'Expected remote URLs', 8).map(normalizeRemoteUrl);

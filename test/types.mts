@@ -24,3 +24,12 @@ const localOnly: 'unverified-local-cache' = inspected.remoteFreshness;
 void localOnly;
 // @ts-expect-error The inspector accepts endpoint data, not an arbitrary command runner.
 inspectRetirements({ ...inspection, execute: () => true });
+
+import { readRetirementConfig, type RetirementConfig } from '../src/node/index.mjs';
+const configuration: RetirementConfig = await readRetirementConfig('/project/config.json', { signal: new AbortController().signal });
+inspectRetirements({ ...configuration, cwd: '/project' });
+// @ts-expect-error Executable configuration is unsupported.
+readRetirementConfig(() => ({ repository: 'anything' }));
+// @ts-expect-error Repository paths come from the invoking caller.
+const embeddedPath: RetirementConfig = { ...configuration, cwd: '/project' };
+void embeddedPath;

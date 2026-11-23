@@ -31,3 +31,11 @@ test('does not forward credential tokens or repository/config-injection override
   }
   assert.equal(safe.GIT_TERMINAL_PROMPT, '0'); assert.equal(safe.GIT_NO_LAZY_FETCH, '1'); assert.equal(safe.GIT_OPTIONAL_LOCKS, '0');
 });
+
+test('POSIX timeout stops owned helper descendants that keep output pipes open', { skip: process.platform === 'win32', timeout: 5000 }, async () => {
+  const start = performance.now();
+  await assert.rejects(runBounded(process.execPath, ['--input-type=module', '-e',
+    "import {spawn} from 'node:child_process'; spawn(process.execPath,['-e','setTimeout(()=>{},3500)'],{stdio:'inherit'}); setTimeout(()=>{},3500);"],
+    { cwd: process.cwd(), timeoutMs: 300, maxOutputBytes: 4096 }), { code: 'ERR_GIT_TIMEOUT' });
+  assert.ok(performance.now() - start < 2500, 'helper descendant must not hold the cancelled command open');
+});

@@ -142,7 +142,7 @@ test('accessor properties are rejected without evaluating them', async () => {
 
 test('rejects unsupported inputs, legacy review maps and ambiguous or empty evidence', async () => {
   const cases = [undefined, null, [], { ...fixture(), knownHeads: { 'fix/squashed': squashed } },
-    ...[null, ['main'], ['main', 'main'], Array(2)].map(permanent => ({ ...fixture(), permanent })),
+    ...[null, [], ['main', 'main'], Array(2)].map(permanent => ({ ...fixture(), permanent })),
     ...[null, [], ['feat'], ['feat/', 'feat/']].map(temporaryPrefixes => ({ ...fixture(), temporaryPrefixes })),
     { ...fixture(), reviewedHeads: null }, { ...fixture(), remote: [] }, { ...fixture(), objectFormat: 'sha512' },
     { ...fixture(), repository: ' ' }, { ...fixture(), isAncestor: undefined }];
@@ -167,4 +167,12 @@ test('validates and plans explicitly selected SHA-256 repositories', async () =>
   const plan = await planRetirements({ repository, permanent: ['main', 'live'], objectFormat: 'sha256',
     remote: { main: sha, live: sha, 'feat/integrated': head }, local: {}, isAncestor: () => true });
   assert.equal(plan.objectFormat, 'sha256'); assert.equal(plan.remote[0].sha, head);
+});
+
+test('a single permanent branch plans integrated work and still refuses unreviewed work', async () => {
+  const options = { repository, permanent: ['main'], remote: { main: target, 'feat/done': integrated },
+    local: { main: target, 'feat/done': integrated }, isAncestor: () => true };
+  const plan = await planRetirements(options);
+  assert.equal(plan.remote[0].branch, 'feat/done'); assert.deepEqual(plan.align, []);
+  await assert.rejects(planRetirements({ ...options, isAncestor: () => false }), code('ERR_UNREVIEWED_WORK'));
 });
