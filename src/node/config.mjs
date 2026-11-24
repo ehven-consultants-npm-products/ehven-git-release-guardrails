@@ -13,7 +13,7 @@ function cancelled(signal) {
 
 // JSON.parse establishes grammar first. This second pass rejects duplicate keys
 // (including escaped aliases) and bounds nesting without executing any input.
-function unambiguousJson(source) {
+export function unambiguousJson(source) {
   let value;
   try { value = JSON.parse(source); }
   catch { fail('ERR_CONFIG_JSON', 'Configuration must contain valid UTF-8 JSON.'); }

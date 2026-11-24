@@ -33,3 +33,13 @@ readRetirementConfig(() => ({ repository: 'anything' }));
 // @ts-expect-error Repository paths come from the invoking caller.
 const embeddedPath: RetirementConfig = { ...configuration, cwd: '/project' };
 void embeddedPath;
+
+import { createRetirementBackup, verifyRetirementBackup, restoreRetirementBackup, type BackupResult } from '../src/node/index.mjs';
+const archive: BackupResult = await createRetirementBackup({ directory: '/backups/new', inspection: { ...configuration, cwd: '/project' }, maxBackupBytes: 1048576 });
+const checkedArchive = await verifyRetirementBackup({ directory: archive.directory });
+const restored = await restoreRetirementBackup({ directory: checkedArchive.directory, destination: '/recovery/new.git' });
+const recoveryPath: string = restored.destination; void recoveryPath;
+// @ts-expect-error Restoring in place is not an option.
+restoreRetirementBackup({ directory: '/backups/new', destination: '/recovery/new.git', force: true });
+// @ts-expect-error A backup requires explicit inspection policy and source.
+createRetirementBackup({ directory: '/backups/new' });

@@ -165,3 +165,33 @@ test('CLI refusals use stable exit codes, clean output channels and omit raw err
   assert.equal(invalid.status, 1); assert.equal(invalid.stdout, ''); assert.doesNotMatch(invalid.stderr, /do-not-print/);
   assert.equal(f.git('show-ref'), before);
 });
+
+test('backup/verify/restore CLI verifies a fresh bare recovery and preserves source refs', { timeout: 15000 }, t => {
+  const f = fixture(t), directory = join(f.directory, 'cli backup'), destination = join(f.directory, 'cli recovery.git');
+  const before = f.git('show-ref');
+  const backup = f.invoke('backup', '--config', f.file, '--cwd', f.root, '--directory', directory, '--json');
+  assert.equal(backup.status, 0, backup.stderr); assert.equal(backup.stderr, '');
+  const created = JSON.parse(backup.stdout); assert.equal(created.command, 'backup'); assert.equal(created.result.verified, true);
+  const verified = f.invoke('verify-backup', '--directory', directory, '--json');
+  assert.equal(verified.status, 0, verified.stderr); assert.deepEqual(JSON.parse(verified.stdout).result, created.result);
+  const restored = f.invoke('restore-backup', '--directory', directory, '--destination', destination, '--json');
+  assert.equal(restored.status, 0, restored.stderr); assert.equal(JSON.parse(restored.stdout).result.destination, destination);
+  const human = f.invoke('verify-backup', '--directory', directory);
+  assert.equal(human.status, 0); assert.match(human.stdout, /Verified verify-backup/);
+  assert.equal(f.git('show-ref'), before); assert.equal(f.git('status', '--porcelain'), '');
+  const refused = f.invoke('restore-backup', '--directory', directory, '--destination', destination, '--json');
+  assert.equal(refused.status, 1); assert.equal(JSON.parse(refused.stderr).error.code, 'ERR_BACKUP_DESTINATION');
+});
+
+test('backup command selection rejects irrelevant flags, malformed limits and incomplete arguments', t => {
+  const f = fixture(t);
+  for (const args of [['backup', '--directory', 'new'], ['verify-backup'], ['restore-backup', '--directory', 'old'],
+    ['preview', '--config', f.file, '--directory', 'new'], ['verify-backup', '--directory', 'old', '--config', f.file],
+    ['backup', '--config', f.file, '--directory', 'new', '--timeout-ms', '01'],
+    ['backup', '--config', f.file, '--directory', 'new', '--max-backup-bytes', '1e6']]) {
+    const result = f.invoke(...args, '--json'); assert.equal(result.status, 2); assert.equal(result.stdout, '');
+    assert.equal(JSON.parse(result.stderr).error.code, 'ERR_CLI_USAGE');
+  }
+  const bounded = f.invoke('backup', '--config', f.file, '--cwd', f.root, '--directory', 'new', '--timeout-ms', '30001', '--json');
+  assert.equal(bounded.status, 1); assert.equal(JSON.parse(bounded.stderr).error.code, 'ERR_INPUT');
+});

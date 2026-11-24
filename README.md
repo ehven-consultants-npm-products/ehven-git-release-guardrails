@@ -7,10 +7,10 @@ source identity. MIT licensed; zero npm runtime dependencies.
 
 This private development candidate implements portable guards and bounded,
 local Git inspection through an optional Node entrypoint, and a retirement CLI
-with a read-only preview command. The first complete release will also include
-verified backup/restore and guarded branch retirement. Network transport,
-backup/restore, guarded mutations/recovery and optional Cloudflare deployment
-are not yet available in this candidate.
+with read-only preview plus verified local backup/restoration commands. The first
+complete release will also include live remote validation and guarded branch
+retirement. Network transport, original-repository mutations/partial-completion
+recovery and optional Cloudflare deployment are not yet available.
 
 The development version is not published to npm. Do not replace an existing
 site integration with this partial candidate. Current verification uses Linux,
@@ -255,10 +255,11 @@ Fixtures cover ancestral and squashed work, changed target, alternate branches
 and both SHA-1/SHA-256 histories. They do not contact a remote or delete live refs.
 Synthetic fixtures are not a second real consumer or a full security assessment.
 
-## Retirement CLI preview
+## Retirement CLI and configuration
 
 The installed executable is `ehven-git-release-guardrails`. This development
-candidate supports preview only. A successful preview does not authorize cleanup.
+candidate supports preview, backup, verify-backup and restore-backup. A successful
+preview or backup does not authorize cleanup.
 
 ```sh
 ehven-git-release-guardrails --help
@@ -323,10 +324,10 @@ Refusals leave stdout empty and write one JSON object on stderr:
 { schemaVersion: 1, ok: false, error: { code, message } }
 ```
 
-Exit codes: 0 for success/help/version, 1 for a refused or failed inspection,
+Exit codes: 0 for success/help/version, 1 for a refused or failed command,
 2 for unsupported/repeated/missing CLI arguments, 130 for handled SIGINT and
 143 for handled SIGTERM. Help/version do not require Git or a config. Unknown
-commands and apply/fetch/backup/restore/deployment flags are refused. Human output
+commands and apply/fetch/deployment/in-place-recovery flags are refused. Human output
 lists temporary branches and proof bases, plus permanent alignment candidates.
 Returned repository data may be sensitive; choose where to retain CLI output.
 
@@ -336,3 +337,113 @@ Configuration adds `ERR_CONFIG_FILE`, `ERR_CONFIG_JSON`, `ERR_CONFIG_SCHEMA`,
 On POSIX, cancellation/deadlines terminate the subprocess group owned by each
 command, including helpers sharing its output pipes. This is not a control for
 arbitrary daemonized processes. Current executable verification remains Linux.
+
+## Verified local backups and fresh bare recovery
+
+```sh
+ehven-git-release-guardrails backup --config ../retirement.json --cwd /path/to/repository --directory /private/backups/new-snapshot --json
+ehven-git-release-guardrails verify-backup --directory /private/backups/new-snapshot --json
+ehven-git-release-guardrails restore-backup --directory /private/backups/new-snapshot --destination /private/recovery/new.git --json
+```
+
+The optional Node entrypoint exports the matching functions:
+
+```js
+const backup = await createRetirementBackup({
+  inspection: { ...config, cwd: '/path/to/repository' },
+  directory: '/private/backups/new-snapshot',
+});
+await verifyRetirementBackup({ directory: backup.directory });
+const recovery = await restoreRetirementBackup({
+  directory: backup.directory,
+  destination: '/private/recovery/new.git',
+});
+```
+
+Import these functions from `@ehven/git-release-guardrails/node`. Creation requires
+an eligible retirement inspection, including clean/full history and the current
+worktree, endpoint, ancestry/review and alignment gates. It repeats inspection and
+all-ref snapshots after proving restoration. These are local-cache checks, with
+no live remote proof and no original ref mutation.
+
+Creation requires a new directory outside the source working tree and Git common
+directory. Its parent must already exist. Broken refs and incomplete reachable
+history prevent backup creation. It writes a self-contained
+`repository.bundle`, then records `manifest.json` only after an actual isolated
+bare clone, exact refs/object-format/HEAD comparison and `git fsck --full --strict`
+succeed. The complete fsynced manifest is published exclusively with a hard link;
+no existing manifest is replaced. Supported filesystem hard links are required.
+The two final files are private (requested mode 0600, directory 0700), subject to
+a possibly stricter caller umask. Temporary proof repositories are removed.
+
+The bundle contains objects reachable from all recorded refs and HEAD, including
+annotated tags and reviewed squash heads. The manifest records full ref names,
+object IDs, symbolic aliases and their immediate targets, original attached branch, object format, byte count
+and SHA256 digest. Both SHA-1 and SHA-256 repositories are covered by executable
+fixtures. Ref/object-format/HEAD preservation was verified after removing the
+original fixture repository.
+
+This is **Git history recovery**, with a deliberately bounded scope:
+
+- It excludes working files, index state, repository configuration, credentials,
+  hooks, reflogs and unreachable objects. Git LFS content and submodule working
+  repositories are not fetched or backed up; committed pointer/gitlink objects
+  remain Git objects in the bundle. Preserve those external assets separately.
+- Recovery creates a new **bare repository** outside existing Git working trees
+  and metadata directories. It does not check out a working
+  tree, configure the original remote, reconnect worktrees or change an existing
+  repository. Inspect recovered history before separately cloning/using it.
+- A backup can contain private historical data. Restrict its storage and access.
+  Digests detect mismatched bytes; they do not authenticate an unknown author or
+  protect against someone replacing both manifest and bundle consistently.
+
+Verification repeats isolated restoration and fsck; a matching digest alone is
+insufficient. Incremental bundles with prerequisites, filtered/unknown bundle
+capabilities, extra/missing advertised refs, malformed manifests, duplicate JSON
+keys, changed inputs and invalid packs are refused. Manifest/header input is
+bounded to 4 MiB; at most 10,000 refs and 100 symbolic aliases are supported.
+
+Restoration first stages the exact regular-file bytes it verifies into a private
+temporary directory. Git clones only that staged file, with global/system Git
+configuration disabled, empty templates and network protocols disabled except
+local file access for this specific clone. It removes the clone's temporary
+transport configuration, restores recorded aliases/HEAD, and verifies the result.
+Configured URL rewrites and templates cannot redirect this recovery clone.
+Original backup files and source refs are left unchanged.
+
+`timeoutMs` is 1..30,000 milliseconds (default 30,000) for the complete Git backup,
+verify or restore operation. Native filesystem calls are not preempted; cancellation
+is checked between reads/writes/commands. `maxBackupBytes` is 1 KiB..1 GiB (default
+256 MiB). Creation/copying stream bundle data rather than buffering the whole
+pack; Git's internal memory use is not bounded by this byte limit. The CLI exposes
+`--timeout-ms` and `--max-backup-bytes` on these three commands. These are separate
+from the source inspection's per-command output limits.
+
+A refusal/interruption can leave the new backup directory incomplete, or leave a
+new partial recovery repository. Preserve it for inspection. Retry only with a
+new destination; existing paths are never overwritten or automatically removed.
+A very late interruption may leave a complete backup; run `verify-backup` before
+relying on it. Manifest presence is not a substitute for verification. This is
+not a power-loss durability certification or a journaled live-ref recovery system.
+
+Paths, parent filesystems/writers, the installed Git executable and source Git
+configuration must be trusted. Final input symlinks, directories/FIFOs used as
+files, and a symlinked backup input directory are refused. Parent symlinks are
+resolved deliberately, not sandboxed. Observed source/input changes are refused;
+checks do not lock out arbitrary concurrent writers or detect every transient
+change. Always revalidate live refs before any future apply operation.
+
+Current executable verification is Linux/Node 24/Git 2.56.1. Unsupported POSIX
+protections are refused; Windows is not supported for backup/recovery. Uncertain
+worktree metadata, including separate-Git-dir layouts whose worktree listing
+conflicts with the supplied source root, remains refused by inspection.
+
+Backup results include `verified: true`, `repository`, `objectFormat`, `refCount`,
+`bundleSha256`, `bundleBytes`, absolute `directory`, `networkAccess: false` and
+`sourceRefMutations: false`; restore additionally returns absolute `destination`.
+CLI JSON uses the same success/error envelope as preview with its actual command
+name. Stable additional errors are `ERR_BACKUP_PLATFORM`, `ERR_BACKUP_PATH`,
+`ERR_BACKUP_DESTINATION`, `ERR_BACKUP_FILE`, `ERR_BACKUP_LIMIT`,
+`ERR_BACKUP_CHANGED`, `ERR_BACKUP_REFS`, `ERR_BACKUP_MANIFEST`,
+`ERR_BACKUP_BUNDLE`, `ERR_BACKUP_INTEGRITY`, `ERR_BACKUP_RESTORE` and
+`ERR_BACKUP_IO`, alongside existing input/Git/cancellation codes.
