@@ -31,3 +31,27 @@ export function inspectRetirements(options: InspectionOptions): Promise<Inspecti
 export type RetirementConfig = Omit<InspectionOptions, 'cwd' | 'signal'>;
 /** A regular, nonsymlink UTF-8 JSON file, at most 1 MiB; no executable config. */
 export function readRetirementConfig(file: string, options?: { readonly signal?: AbortSignal }): Promise<RetirementConfig>;
+
+export interface BackupOptions {
+  readonly directory: string;
+  /** Whole Git-operation deadline; 1..30000 milliseconds, default 30000. Native FS calls are not preempted. */
+  readonly timeoutMs?: number;
+  /** Bundle byte limit; 1024..1073741824, default 268435456. */
+  readonly maxBackupBytes?: number;
+  readonly signal?: AbortSignal;
+}
+export interface BackupResult {
+  verified: true;
+  repository: string;
+  objectFormat: ObjectFormat;
+  refCount: number;
+  bundleSha256: string;
+  bundleBytes: number;
+  directory: string;
+  networkAccess: false;
+  sourceRefMutations: false;
+}
+export interface RestorationResult extends BackupResult { destination: string; }
+export function createRetirementBackup(options: BackupOptions & { readonly inspection: Omit<InspectionOptions, 'signal'> }): Promise<BackupResult>;
+export function verifyRetirementBackup(options: BackupOptions): Promise<BackupResult>;
+export function restoreRetirementBackup(options: BackupOptions & { readonly destination: string }): Promise<RestorationResult>;
