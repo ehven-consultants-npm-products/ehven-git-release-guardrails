@@ -7,10 +7,9 @@ source identity. MIT licensed; zero npm runtime dependencies.
 
 This private development candidate implements portable guards and bounded,
 local Git inspection through an optional Node entrypoint, and a retirement CLI
-with read-only preview plus verified local backup/restoration commands. The first
-complete release will also include live remote validation and guarded branch
-retirement. Network transport, original-repository mutations/partial-completion
-recovery and optional Cloudflare deployment are not yet available.
+with local and live read-only preview plus verified backup and restoration. The
+remaining execution work is guarded branch retirement, journaled recovery from
+partial completion, and any optional Cloudflare deployment support.
 
 The development version is not published to npm. Do not replace an existing
 site integration with this partial candidate. Current verification uses Linux,
@@ -222,7 +221,7 @@ The result includes `source`, `transport`, `worktrees` and `plan`, plus:
 
 No fetch, remote query, push, pruning, deployment or ref update is performed.
 Remote-tracking data may be stale. Refreshing it safely is a separate future
-transport step; do not interpret a successful inspection as live remote proof.
+step provided by the opt-in live preview below.
 
 Git commands use no shell, noninteractive input, optional locks disabled and
 network protocols/lazy object fetching disabled. Filesystem-monitor hooks are
@@ -252,14 +251,13 @@ do not bypass it with forced cleanup.
 
 `npm test` runs portable contract tests plus disposable local Git-history fixtures.
 Fixtures cover ancestral and squashed work, changed target, alternate branches
-and both SHA-1/SHA-256 histories. They do not contact a remote or delete live refs.
+and both SHA-1/SHA-256 histories. Live preview tests use disposable remotes.
 Synthetic fixtures are not a second real consumer or a full security assessment.
 
 ## Retirement CLI and configuration
 
 The installed executable is `ehven-git-release-guardrails`. This development
-candidate supports preview, backup, verify-backup and restore-backup. A successful
-preview or backup does not authorize cleanup.
+candidate supports preview, backup, verify-backup and restore-backup. Preview supports an explicit read-only live comparison.
 
 ```sh
 ehven-git-release-guardrails --help
@@ -337,6 +335,48 @@ Configuration adds `ERR_CONFIG_FILE`, `ERR_CONFIG_JSON`, `ERR_CONFIG_SCHEMA`,
 On POSIX, cancellation/deadlines terminate the subprocess group owned by each
 command, including helpers sharing its output pipes. This is not a control for
 arbitrary daemonized processes. Current executable verification remains Linux.
+
+## Live retirement preview
+
+```sh
+ehven-git-release-guardrails preview --config ../retirement.json --cwd /path/to/repository --live --json
+```
+
+Use the package's local preview first. Live mode applies the same source,
+worktree, review, refspec and endpoint checks. It runs read-only `git ls-remote`
+against each distinct effective fetch and push endpoint, then rechecks the local
+snapshot. Each endpoint must advertise exactly the branch names and commit IDs
+in the local remote-tracking cache. New, missing and moved heads stop the preview.
+No tags are compared. A push endpoint must support read access for this check.
+
+A success reports `remoteFreshness: 'matched-live-advertisement'` and an
+`observation` with its completion timestamp, the branch count for each endpoint
+and the number of distinct endpoints queried. This is a point-in-time comparison
+of visible advertisements. Server permissions or hidden-ref policy can limit
+visibility. Endpoints are read separately and may change during or after the
+check. A matching advertisement does not prove push access or authorize a
+mutation. An executor must obtain its own fresh state and atomic checks.
+
+Live mode supports explicit HTTPS and direct OpenSSH with simple ASCII host and
+repository path syntax. For SSH, use the same URL form in the allowlist and Git
+configuration. SCP-style relative paths and `ssh://` absolute paths are distinct.
+SSH requires established host trust and a default identity or local agent. The
+query uses batch mode without SSH config aliases, forwarding or host-key updates.
+HTTPS uses verified TLS and disables redirects. Both transports run with isolated
+Git configuration, so query-time URL rewrites and credential helpers are bypassed.
+
+For an authenticated HTTPS repository, load a complete `Basic ...` or `Bearer
+...` authorization value into an environment variable through your secret
+manager or CI configuration. Pass its name with `--https-auth-env` and the
+matching approved URL with `--https-auth-endpoint`. Never put the header value in
+command arguments or the JSON configuration. Only the child querying that exact
+HTTPS endpoint receives the header. The Node API accepts `httpsAuthorization:
+{ endpoint, value }` on `validateLiveRetirement(options)` from the Node subpath.
+Both interfaces use the same source policy and bounded Git deadline.
+
+A stale preview reports added, missing and moved counts. Inspect and refresh
+tracking refs using your normal Git workflow before trying again. This command
+does not fetch objects, prune tracking refs, push, or delete branches.
 
 ## Verified local backups and fresh bare recovery
 

@@ -29,7 +29,7 @@ test('loads ordinary declarative data and normalizes endpoints without using env
   writeFileSync(f.file, JSON.stringify(f.config));
   const value = await readRetirementConfig(f.file);
   assert.equal(value.repository, '${HOME}/opaque-identity');
-  assert.deepEqual(value.expectedRemoteUrls, ['ssh://git@example.test/team/repo.git']);
+  assert.deepEqual(value.expectedRemoteUrls, ['git@EXAMPLE.TEST:team/repo.git']);
   assert.equal(value.timeoutMs, 10000); assert.equal(Object.hasOwn(value, 'schemaVersion'), false);
 });
 
