@@ -5,11 +5,11 @@ source identity. MIT licensed; zero npm runtime dependencies.
 
 ## Development status
 
-This private development candidate implements portable guards and bounded,
+This development candidate implements portable guards and bounded,
 local Git inspection through an optional Node entrypoint, and a retirement CLI
-with local and live read-only preview plus verified backup and restoration. The
-remaining execution work is guarded branch retirement, journaled recovery from
-partial completion, and any optional Cloudflare deployment support.
+with local and live read-only preview, verified backup and restoration, explicit
+branch retirement, and recovery from partial completion. Site acceptance and
+release verification are pending.
 
 The development version is not published to npm. Do not replace an existing
 site integration with this partial candidate. Current verification uses Linux,
@@ -206,7 +206,7 @@ refused. Remote names use a conservative ASCII form, up to 64 characters.
 Local and remote-tracking heads must align as required by the planner. The
 inspector repeats source/ref/worktree/transport reads and refuses observed
 changes during inspection. This is not an atomic lock or execution permit;
-future apply operations must revalidate live state under their own controls.
+apply revalidates live state under its own controls.
 
 The result includes `source`, `transport`, `worktrees` and `plan`, plus:
 
@@ -325,7 +325,7 @@ Refusals leave stdout empty and write one JSON object on stderr:
 Exit codes: 0 for success/help/version, 1 for a refused or failed command,
 2 for unsupported/repeated/missing CLI arguments, 130 for handled SIGINT and
 143 for handled SIGTERM. Help/version do not require Git or a config. Unknown
-commands and apply/fetch/deployment/in-place-recovery flags are refused. Human output
+commands and unrecognized flags are refused. Human output
 lists temporary branches and proof bases, plus permanent alignment candidates.
 Returned repository data may be sensitive; choose where to retain CLI output.
 
@@ -464,14 +464,14 @@ new partial recovery repository. Preserve it for inspection. Retry only with a
 new destination; existing paths are never overwritten or automatically removed.
 A very late interruption may leave a complete backup; run `verify-backup` before
 relying on it. Manifest presence is not a substitute for verification. This is
-not a power-loss durability certification or a journaled live-ref recovery system.
+not a power-loss durability certification. Apply adds its own retirement journal.
 
 Paths, parent filesystems/writers, the installed Git executable and source Git
 configuration must be trusted. Final input symlinks, directories/FIFOs used as
 files, and a symlinked backup input directory are refused. Parent symlinks are
 resolved deliberately, not sandboxed. Observed source/input changes are refused;
 checks do not lock out arbitrary concurrent writers or detect every transient
-change. Always revalidate live refs before any future apply operation.
+change. Apply revalidates live refs against the approved plan.
 
 Current executable verification is Linux/Node 24/Git 2.56.1. Unsupported POSIX
 protections are refused; Windows is not supported for backup/recovery. Uncertain
@@ -487,3 +487,64 @@ name. Stable additional errors are `ERR_BACKUP_PLATFORM`, `ERR_BACKUP_PATH`,
 `ERR_BACKUP_CHANGED`, `ERR_BACKUP_REFS`, `ERR_BACKUP_MANIFEST`,
 `ERR_BACKUP_BUNDLE`, `ERR_BACKUP_INTEGRITY`, `ERR_BACKUP_RESTORE` and
 `ERR_BACKUP_IO`, alongside existing input/Git/cancellation codes.
+
+## Apply a reviewed plan
+
+1. Run live preview from the target repository. Confirm the retirement list,
+   proof basis, destination, and permanent branches. Save the printed plan ID.
+2. Run apply with that exact ID and a new private backup directory outside the
+   repository. Use the same source, configuration, and authentication options.
+3. Keep the backup and journal. On failure, inspect the source and remote before
+   continuing the saved operation. Use the same ID and directory with recover.
+
+```sh
+ehven-git-release-guardrails preview --live --config /private/retirement-config.json --json
+ehven-git-release-guardrails apply --config /private/retirement-config.json --expect-plan REVIEWED_ID --directory /private/backups/new-operation --json
+ehven-git-release-guardrails recover --config /private/retirement-config.json --expect-plan REVIEWED_ID --directory /private/backups/new-operation --json
+```
+
+`applyRetirement` and `recoverRetirement` accept
+`{ inspection, expectedPlanId, directory, signal?, timeoutMs?, maxBackupBytes? }`
+from the Node subpath. `inspection` uses the same inputs as live preview, with
+any authorization supplied separately from the JSON configuration. The plan
+ID commits to the observed source root, Git endpoint settings, permanent
+branch set, exact branch heads and reviewed deletion plan. Fetch and push
+must resolve to the same effective endpoint for execution.
+
+Apply creates a private verified backup and fsyncs an immutable
+`retirement.json` journal before the first mutation. Remote deletions are a
+single atomic push with one exact lease per retired ref. The server must
+advertise atomic push support. The package caps each operation at 64 remote
+deletions and bounds push argument size. The local ref transaction verifies
+original IDs, aligns eligible permanent branches, and removes reviewed local
+heads and matching tracking refs. It checks the source again while Git holds
+the prepared ref locks. No unrelated ref pruning is performed.
+
+Exclusive apply and recovery commands use `ehven-retirement.lock` in the
+repository's Git common directory. Do not run other Git writers or worktree
+operations against the same checkout during execution. A hard process death
+can leave this lock behind. Inspect its recorded process and directory before
+removing it, and remove it only after confirming no process owns the operation.
+Keep the bundle and journal available for either path.
+
+Recovery re-verifies the saved bundle and reads both actual Git states. If
+both sides still match the approved original state, recovery can retry the
+exact leased push. If remote completion is already visible, recovery proceeds
+only with the original local ref transaction. A completed operation can be
+verified again. Any other ref state requires investigation and retains the
+backup. Reconcile unexpected state manually and review a new plan. Recovery
+does not restore old refs over concurrent work.
+
+The remote and local transactions commit separately. Git leases guard
+the remote refs being deleted. A standard push does not lock unchanged
+permanent branches, and server-side visibility policies affect advertisements.
+Keep permanent-branch writers coordinated during apply. Rechecks detect
+observed divergence, including divergence after a write, but cannot undo or
+rule out changes between observations. A host crash can leave a ref store
+partly updated. Recovery stops on a mixed state and keeps the verified backup.
+No automatic rollback is performed.
+
+Success includes the reviewed plan ID, backup path and verified counts of
+remote deletions, local deletions and local alignments. An empty plan succeeds
+with zero changes and no new backup directory. SSH and HTTPS use the same
+restricted transport settings as live preview.

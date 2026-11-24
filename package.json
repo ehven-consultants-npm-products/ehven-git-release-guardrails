@@ -1,10 +1,10 @@
 {
   "name": "@ehven/git-release-guardrails",
-  "version": "0.0.0-development.5",
+  "version": "0.0.0-development.6",
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "Portable Git release guards, live retirement previews and verified Git history backup and recovery.",
+  "description": "Portable Git release guards with verified backups, guarded retirement and recovery.",
   "engines": {
     "node": "24.x"
   },

@@ -34,7 +34,7 @@ export function readLiveAuthorization(value) {
   return { endpoint: target.url, value: data.value };
 }
 
-function approvedDestinations(raw, approved, authorization) {
+export function approvedDestinations(raw, approved, authorization) {
   const urls = new Set(approved.map(endpoint).map(entry => entry.url));
   const destinations = [
     { role: 'fetch', ...endpoint(raw.fetch) },
@@ -74,20 +74,39 @@ const SSH_COMMAND = [
   '-o ForwardX11=no', '-o PermitLocalCommand=no', '-o ControlMaster=no', '-o ControlPath=none',
 ].join(' ');
 
-async function query(destination, format, authorization, options) {
-  const { protocol, url, role } = destination;
+function transportOptions(destination, authorization, options) {
+  const { protocol, url } = destination;
   const transport = { protocol, authorization: url === authorization?.endpoint ? authorization.value : undefined };
   const args = [
-    '--git-dir=/dev/null', ...GIT_LOCAL_ARGS, '-c', `protocol.${protocol}.allow=always`,
+    ...GIT_LOCAL_ARGS, '-c', `protocol.${protocol}.allow=always`,
     '-c', 'http.followRedirects=false', '-c', 'http.sslVerify=true',
     '-c', 'ssh.variant=ssh', '-c', `core.sshCommand=${SSH_COMMAND}`,
-    'ls-remote', '--refs', '--heads', '--', url,
   ];
-  const result = await runBounded('git', args, { ...options, isolatedConfig: true, transport });
+  return { args, options: { ...options, isolatedConfig: true, transport } };
+}
+
+export async function queryHeads(destination, format, authorization, options) {
+  const { url, role } = destination;
+  const transport = transportOptions(destination, authorization, options);
+  const result = await runBounded('git', ['--git-dir=/dev/null', ...transport.args, 'ls-remote', '--refs', '--heads', '--', url], transport.options);
   if (result.status !== 0 || result.stderrBytes) {
     fail('ERR_LIVE_REMOTE_QUERY', `The ${role} endpoint did not return a clean read-only Git advertisement. Check access, TLS or SSH host trust, then retry.`);
   }
   return advertisedHeads(result.stdout, format);
+}
+
+export async function pushRetirements(destination, deletions, authorization, options, gitDir) {
+  const leases = deletions.map(({ branch, sha }) => `--force-with-lease=refs/heads/${branch}:${sha}`);
+  const refspecs = deletions.map(({ branch }) => `:refs/heads/${branch}`);
+  if (refspecs.length > 64 || Buffer.byteLength([...leases, ...refspecs].join('\n')) > 49152) {
+    fail('ERR_RETIREMENT_LIMIT', 'The plan exceeds the supported size of one atomic push.');
+  }
+  const transport = transportOptions(destination, authorization, options);
+  const result = await runBounded('git', [
+    `--git-dir=${gitDir}`, ...transport.args, 'push', '--atomic', '--no-follow-tags', '--no-verify', '--porcelain',
+    ...leases, '--', destination.url, ...refspecs,
+  ], transport.options);
+  if (result.status !== 0) fail('ERR_RETIREMENT_PUSH', 'The atomic push failed or its result is uncertain. Review the journal before any retry.');
 }
 
 export async function validateAdvertisements({ raw, approved, authorization, cached, format, options }) {
@@ -95,7 +114,7 @@ export async function validateAdvertisements({ raw, approved, authorization, cac
   const observations = new Map();
   for (const destination of destinations) {
     if (observations.has(destination.url)) continue;
-    const heads = await query(destination, format, authorization, options);
+    const heads = await queryHeads(destination, format, authorization, options);
     const cachedEntries = Object.entries(cached);
     let missing = 0, moved = 0, added = 0;
     for (const [name, oid] of cachedEntries) {

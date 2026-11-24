@@ -23,7 +23,7 @@ export function inspectionEnvironment(isolatedConfig = false, transport) {
 }
 
 /** Internal bounded subprocess primitive; never uses a shell or logs output. */
-export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBytes, signal, isolatedConfig = false, transport }) {
+export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBytes, signal, isolatedConfig = false, transport, input, beforeCommit }) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000
       || !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 16 * 1024 * 1024) {
     fail('ERR_INPUT', 'Subprocess limits are outside the supported bounds.');
@@ -36,7 +36,7 @@ export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBy
     // Own a process group on POSIX so cancellation also stops Git helpers that
     // inherited the output pipes. Never signal the caller's process group.
     const ownGroup = process.platform !== 'win32';
-    const child = spawn(executable, args, { cwd, env: inspectionEnvironment(isolatedConfig, transport), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: ownGroup });
+    const child = spawn(executable, args, { cwd, env: inspectionEnvironment(isolatedConfig, transport), stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true, detached: ownGroup });
     function stop(code, message) {
       failure ??= new GitReleaseGuardError(code, message);
       if (ownGroup && child.pid) {
@@ -53,8 +53,31 @@ export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBy
       if (bytes > maxOutputBytes) { stop('ERR_GIT_OUTPUT_LIMIT', 'Git inspection exceeded its output limit.'); return; }
       if (!failure) target.push(chunk);
     }
-    child.stdout.on('data', chunk => collect(out, chunk));
+    let preparation = '', prepared = false;
+    child.stdout.on('data', chunk => {
+      collect(out, chunk);
+      if (!beforeCommit || prepared || failure) return;
+      preparation += chunk.toString('utf8');
+      const expected = 'start: ok\nprepare: ok\n';
+      if (!expected.startsWith(preparation)) {
+        stop('ERR_GIT_INPUT', 'Git returned unexpected transaction preparation output.');
+      } else if (preparation === expected) {
+        prepared = true;
+        Promise.resolve().then(beforeCommit).then(() => {
+          if (!failure && !settled) child.stdin.end('commit\n');
+        }, error => {
+          if (failure || settled) return;
+          failure = error;
+          child.stdin.end('abort\n');
+        });
+      }
+    });
     child.stderr.on('data', chunk => collect(err, chunk));
+    if (input !== undefined) {
+      child.stdin.on('error', () => stop('ERR_GIT_INPUT', 'Git closed its transaction input early.'));
+      if (beforeCommit) child.stdin.write(input);
+      else child.stdin.end(input);
+    }
     child.on('error', () => { failure ??= new GitReleaseGuardError('ERR_GIT_START', 'Git could not be started.'); });
     child.on('close', (status, killedBy) => {
       if (settled) return;
