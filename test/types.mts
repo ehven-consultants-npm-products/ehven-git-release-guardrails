@@ -49,3 +49,9 @@ const livePreview: LiveInspectionResult = await validateLiveRetirement({ ...conf
   httpsAuthorization: { endpoint: 'https://example.test/team/repo.git', value: 'Bearer fixture' } });
 const matched: 'matched-live-advertisement' = livePreview.remoteFreshness;
 const network: true = livePreview.networkAccess; void matched; void network;
+
+import { applyRetirement, recoverRetirement, type RetirementExecutionResult } from '../src/node/index.mjs';
+const request = { directory: '/backup/operation', inspection: { ...configuration, cwd: '/project' }, expectedPlanId: livePreview.planId };
+const completed: RetirementExecutionResult = await applyRetirement(request);
+const resumed: boolean = (await recoverRetirement(request)).recovered;
+void completed; void resumed;

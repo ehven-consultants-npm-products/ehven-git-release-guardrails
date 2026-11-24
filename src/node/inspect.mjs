@@ -1,5 +1,6 @@
 import { realpath, lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { fields, list, text, branch, branchList, objectFormat, objectId } from '../validation.mjs';
 import { fail } from '../errors.mjs';
 import { assertRemoteDestinations, normalizeRemoteUrl } from '../remote.mjs';
@@ -9,13 +10,18 @@ import { readLiveAuthorization, validateAdvertisements } from './live-remote.mjs
 
 function lines(value) { return value === '' ? [] : value.replace(/\n$/u, '').split('\n'); }
 
-function refs(value, remote, format) {
+function refs(value, remote, format, permanent) {
   const local = Object.create(null), tracking = Object.create(null);
   for (const line of lines(value)) {
     const parts = line.split('\0');
     if (parts.length !== 3) fail('ERR_GIT_PARSE', 'Git returned malformed ref data.');
     const [name, sha, symbolic] = parts;
-    if (name === `refs/remotes/${remote}/HEAD` && symbolic) continue;
+    if (name === `refs/remotes/${remote}/HEAD` && symbolic) {
+      if (permanent && !permanent.some(branch => symbolic === `refs/remotes/${remote}/${branch}`)) {
+        fail('ERR_SYMBOLIC_REF', 'The remote-tracking HEAD must point to a permanent branch for execution.');
+      }
+      continue;
+    }
     if (symbolic) fail('ERR_SYMBOLIC_REF', 'A branch ref is symbolic; review it before retirement.');
     const map = name.startsWith('refs/heads/') ? local : name.startsWith(`refs/remotes/${remote}/`) ? tracking : undefined;
     if (!map) fail('ERR_GIT_PARSE', 'Git returned an unexpected ref namespace.');
@@ -47,16 +53,20 @@ function worktrees(value, root, head, integration, format) {
 }
 
 /** Local-cache inspection only. */
-export function inspectRetirements(input) { return inspect(input, false); }
+export async function inspectRetirements(input) { return (await inspectRetirementState(input)).result; }
 
 /** Read-only live comparison against the effective fetch and push endpoints. */
-export function validateLiveRetirement(input) { return inspect(input, true); }
+export async function validateLiveRetirement(input) { return (await inspectRetirementState(input, { live: true })).result; }
 
-async function inspect(input, live) {
+export function retirementPlanId(state) {
+  return createHash('sha256').update(JSON.stringify(state)).digest('hex');
+}
+
+export async function inspectRetirementState(input, { live = false, execution = false } = {}) {
   const keys = ['cwd', 'repository', 'expectedRemoteUrls', 'remote', 'integrationBranch', 'permanent', 'reviewedHeads', 'temporaryPrefixes', 'timeoutMs', 'maxOutputBytes', 'signal'];
-  if (live) keys.push('httpsAuthorization');
+  if (live || execution) keys.push('httpsAuthorization');
   const options = fields(input, keys, 'Inspection options');
-  const authorization = live ? readLiveAuthorization(options.httpsAuthorization) : undefined;
+  const authorization = live || execution ? readLiveAuthorization(options.httpsAuthorization) : undefined;
   const cwd = text(options.cwd, 'Repository root', 4096);
   const repository = text(options.repository, 'Repository identity');
   const remote = options.remote === undefined ? 'origin' : text(options.remote, 'Remote name', 64);
@@ -112,7 +122,7 @@ async function inspect(input, live) {
     const tags = await run(['config', '--type=bool', '--get', 'push.followTags'], [0, 1]);
     if ((mirror.status === 0 && mirror.stdout.trim() !== 'false') || push.stdout
         || (tags.status === 0 && tags.stdout.trim() !== 'false')) fail('ERR_PUSH_CONFIGURATION', 'Mirror, implicit push-refspec or follow-tags configuration requires review.');
-    return { ...destinations, fetchRefspec: fetch[0], ...(live ? { raw: { fetch: fetchUrls[0], push: pushUrls[0] } } : {}) };
+    return { ...destinations, fetchRefspec: fetch[0], ...(live || execution ? { raw: { fetch: fetchUrls[0], push: pushUrls[0] } } : {}) };
   }
   async function snapshot() {
     const current = await run(['symbolic-ref', '--quiet', '--short', 'HEAD'], [0, 1]);
@@ -125,7 +135,7 @@ async function inspect(input, live) {
     return { head, allRefs, trees, transport: await transport() };
   }
   const before = await snapshot();
-  const maps = refs(before.allRefs, remote, format);
+  const maps = refs(before.allRefs, remote, format, execution ? permanent : undefined);
   if (maps.local[integration] !== before.head || maps.remote[integration] !== before.head) fail('ERR_SOURCE_ALIGNMENT', 'The local integration branch must match its remote-tracking head. Refresh and review separately.');
   const checkedWorktrees = worktrees(before.trees, root, before.head, integration, format);
   const isAncestor = async (head, target) => (await run(['merge-base', '--is-ancestor', head, target], [0, 1])).status === 0;
@@ -137,11 +147,21 @@ async function inspect(input, live) {
   const result = { inspectionOnly: true, remoteFreshness: 'unverified-local-cache', networkAccess: false, refMutations: false,
     source: { root, branch: integration, head: before.head, objectFormat: format, remote },
     transport: publicTransport, worktrees: checkedWorktrees, plan };
-  if (!live) return result;
+  const state = {
+    source: result.source,
+    transport: publicTransport,
+    raw,
+    permanent: [...permanent].sort(),
+    refs: { local: Object.entries(maps.local).sort(), tracking: Object.entries(maps.remote).sort() },
+    plan,
+  };
+  const data = { result, state, approved, authorization };
+  if (!live) return data;
   const observation = await validateAdvertisements({ raw, approved, authorization, cached: maps.remote, format,
     options: { cwd: root, timeoutMs, maxOutputBytes, signal } });
   if (JSON.stringify(before) !== JSON.stringify(await snapshot())) {
     fail('ERR_INSPECTION_CHANGED', 'Git state changed during live validation; settle concurrent work and retry.');
   }
-  return { ...result, remoteFreshness: 'matched-live-advertisement', networkAccess: true, observation };
+  return { ...data, result: { ...result, remoteFreshness: 'matched-live-advertisement', networkAccess: true, observation,
+    planId: retirementPlanId(state) } };
 }

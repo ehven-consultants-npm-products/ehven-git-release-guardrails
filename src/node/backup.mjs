@@ -29,7 +29,7 @@ function operation(input, extra = []) {
 }
 
 function check({ signal }) {
-  if (signal.aborted) fail(signal.reason?.name === 'TimeoutError' ? 'ERR_GIT_TIMEOUT' : 'ERR_ABORTED', 'Backup operation was cancelled or exceeded its deadline.');
+  if (signal?.aborted) fail(signal.reason?.name === 'TimeoutError' ? 'ERR_GIT_TIMEOUT' : 'ERR_ABORTED', 'Backup operation was cancelled or exceeded its deadline.');
 }
 
 function inside(child, parent) {
@@ -338,6 +338,23 @@ export async function verifyRetirementBackup(input) {
     const directory = await existingDirectory(requested), data = await readManifest(directory, options);
     return restoreData(directory, data, options);
   });
+}
+
+// Internal binding between the approved heads and the verified Git bundle.
+export async function assertBackupCoversRetirement(directory, state, checksum, signal) {
+  const options = { signal };
+  const data = await readManifest(await existingDirectory(directory), options);
+  const byName = new Map(data.refs.map(ref => [ref.name, ref]));
+  const source = state.source;
+  const expected = [
+    ...state.refs.local.map(([name, id]) => [`refs/heads/${name}`, id]),
+    ...state.refs.tracking.map(([name, id]) => [`refs/remotes/${source.remote}/${name}`, id]),
+  ];
+  if (data.repository !== state.plan.repository || data.source.branch !== source.branch ||
+      data.source.head !== source.head || data.source.objectFormat !== source.objectFormat || data.bundle.sha256 !== checksum ||
+      expected.some(([name, id]) => byName.get(name)?.oid !== id || byName.get(name)?.symbolicTarget)) {
+    fail('ERR_RETIREMENT_BACKUP', 'The verified backup does not cover the approved direct branch refs.');
+  }
 }
 
 /** Restore only into a newly created bare repository, never an existing live repo. */

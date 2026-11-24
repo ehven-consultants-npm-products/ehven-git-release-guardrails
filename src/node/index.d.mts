@@ -34,6 +34,8 @@ export interface LiveInspectionOptions extends InspectionOptions {
 export interface LiveInspectionResult extends Omit<InspectionResult, 'remoteFreshness' | 'networkAccess'> {
   remoteFreshness: 'matched-live-advertisement';
   networkAccess: true;
+  /** Exact reviewed plan identity to supply to apply or recovery. */
+  planId: string;
   observation: { checkedAt: string; fetchBranchCount: number; pushBranchCount: number; distinctEndpointsChecked: number };
 }
 export function validateLiveRetirement(options: LiveInspectionOptions): Promise<LiveInspectionResult>;
@@ -66,3 +68,19 @@ export interface RestorationResult extends BackupResult { destination: string; }
 export function createRetirementBackup(options: BackupOptions & { readonly inspection: Omit<InspectionOptions, 'signal'> }): Promise<BackupResult>;
 export function verifyRetirementBackup(options: BackupOptions): Promise<BackupResult>;
 export function restoreRetirementBackup(options: BackupOptions & { readonly destination: string }): Promise<RestorationResult>;
+
+export interface RetirementExecutionOptions extends BackupOptions {
+  readonly inspection: Omit<LiveInspectionOptions, 'signal'>;
+  readonly expectedPlanId: string;
+}
+export interface RetirementExecutionResult {
+  completed: true;
+  recovered: boolean;
+  planId: string;
+  directory: string | null;
+  remoteRetired: number;
+  localRetired: number;
+  localAligned: number;
+}
+export function applyRetirement(options: RetirementExecutionOptions): Promise<RetirementExecutionResult>;
+export function recoverRetirement(options: RetirementExecutionOptions): Promise<RetirementExecutionResult>;
