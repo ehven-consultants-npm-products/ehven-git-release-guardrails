@@ -5,6 +5,7 @@ import { fail } from '../errors.mjs';
 import { assertRemoteDestinations, normalizeRemoteUrl } from '../remote.mjs';
 import { planRetirements } from '../plan.mjs';
 import { gitReader } from './process.mjs';
+import { readLiveAuthorization, validateAdvertisements } from './live-remote.mjs';
 
 function lines(value) { return value === '' ? [] : value.replace(/\n$/u, '').split('\n'); }
 
@@ -45,9 +46,17 @@ function worktrees(value, root, head, integration, format) {
   return [{ path: root, branch: integration, head }];
 }
 
-/** Local-cache inspection only. No fetch, push, ref update or deployment. */
-export async function inspectRetirements(input) {
-  const options = fields(input, ['cwd', 'repository', 'expectedRemoteUrls', 'remote', 'integrationBranch', 'permanent', 'reviewedHeads', 'temporaryPrefixes', 'timeoutMs', 'maxOutputBytes', 'signal'], 'Inspection options');
+/** Local-cache inspection only. */
+export function inspectRetirements(input) { return inspect(input, false); }
+
+/** Read-only live comparison against the effective fetch and push endpoints. */
+export function validateLiveRetirement(input) { return inspect(input, true); }
+
+async function inspect(input, live) {
+  const keys = ['cwd', 'repository', 'expectedRemoteUrls', 'remote', 'integrationBranch', 'permanent', 'reviewedHeads', 'temporaryPrefixes', 'timeoutMs', 'maxOutputBytes', 'signal'];
+  if (live) keys.push('httpsAuthorization');
+  const options = fields(input, keys, 'Inspection options');
+  const authorization = live ? readLiveAuthorization(options.httpsAuthorization) : undefined;
   const cwd = text(options.cwd, 'Repository root', 4096);
   const repository = text(options.repository, 'Repository identity');
   const remote = options.remote === undefined ? 'origin' : text(options.remote, 'Remote name', 64);
@@ -56,7 +65,8 @@ export async function inspectRetirements(input) {
   const permanent = branchList(options.permanent, 'Permanent branches');
   if (!permanent.includes(integration)) fail('ERR_INPUT', 'The integration branch must be permanent.');
   // Validate expected endpoints before starting a subprocess; preserve an owned snapshot.
-  const expectedRemoteUrls = list(options.expectedRemoteUrls, 'Expected remote URLs', 8).map(normalizeRemoteUrl);
+  const approved = list(options.expectedRemoteUrls, 'Expected remote URLs', 8);
+  const expectedRemoteUrls = approved.map(normalizeRemoteUrl);
   assertRemoteDestinations({ expectedRemoteUrls, fetchUrls: expectedRemoteUrls.slice(0, 1), pushUrls: expectedRemoteUrls.slice(0, 1) });
   const reviewedHeads = options.reviewedHeads === undefined ? undefined : list(options.reviewedHeads, 'Reviewed heads', 10000)
     .map(item => fields(item, ['repository', 'branch', 'head', 'target', 'evidence'], 'Reviewed head'));
@@ -102,7 +112,7 @@ export async function inspectRetirements(input) {
     const tags = await run(['config', '--type=bool', '--get', 'push.followTags'], [0, 1]);
     if ((mirror.status === 0 && mirror.stdout.trim() !== 'false') || push.stdout
         || (tags.status === 0 && tags.stdout.trim() !== 'false')) fail('ERR_PUSH_CONFIGURATION', 'Mirror, implicit push-refspec or follow-tags configuration requires review.');
-    return { ...destinations, fetchRefspec: fetch[0] };
+    return { ...destinations, fetchRefspec: fetch[0], ...(live ? { raw: { fetch: fetchUrls[0], push: pushUrls[0] } } : {}) };
   }
   async function snapshot() {
     const current = await run(['symbolic-ref', '--quiet', '--short', 'HEAD'], [0, 1]);
@@ -123,7 +133,15 @@ export async function inspectRetirements(input) {
     temporaryPrefixes, objectFormat: format, isAncestor });
   const after = await snapshot();
   if (JSON.stringify(before) !== JSON.stringify(after)) fail('ERR_INSPECTION_CHANGED', 'Git state changed during inspection; settle concurrent work and retry.');
-  return { inspectionOnly: true, remoteFreshness: 'unverified-local-cache', networkAccess: false, refMutations: false,
+  const { raw, ...publicTransport } = before.transport;
+  const result = { inspectionOnly: true, remoteFreshness: 'unverified-local-cache', networkAccess: false, refMutations: false,
     source: { root, branch: integration, head: before.head, objectFormat: format, remote },
-    transport: before.transport, worktrees: checkedWorktrees, plan };
+    transport: publicTransport, worktrees: checkedWorktrees, plan };
+  if (!live) return result;
+  const observation = await validateAdvertisements({ raw, approved, authorization, cached: maps.remote, format,
+    options: { cwd: root, timeoutMs, maxOutputBytes, signal } });
+  if (JSON.stringify(before) !== JSON.stringify(await snapshot())) {
+    fail('ERR_INSPECTION_CHANGED', 'Git state changed during live validation; settle concurrent work and retry.');
+  }
+  return { ...result, remoteFreshness: 'matched-live-advertisement', networkAccess: true, observation };
 }

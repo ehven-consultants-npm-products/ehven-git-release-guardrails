@@ -27,6 +27,17 @@ export interface InspectionResult {
 }
 export function inspectRetirements(options: InspectionOptions): Promise<InspectionResult>;
 
+export interface LiveInspectionOptions extends InspectionOptions {
+  /** Optional Basic or Bearer header value sent only to this exact approved HTTPS endpoint. */
+  readonly httpsAuthorization?: { readonly endpoint: string; readonly value: string };
+}
+export interface LiveInspectionResult extends Omit<InspectionResult, 'remoteFreshness' | 'networkAccess'> {
+  remoteFreshness: 'matched-live-advertisement';
+  networkAccess: true;
+  observation: { checkedAt: string; fetchBranchCount: number; pushBranchCount: number; distinctEndpointsChecked: number };
+}
+export function validateLiveRetirement(options: LiveInspectionOptions): Promise<LiveInspectionResult>;
+
 /** Declarative schemaVersion 1 data; paths/AbortSignal are supplied by the caller. */
 export type RetirementConfig = Omit<InspectionOptions, 'cwd' | 'signal'>;
 /** A regular, nonsymlink UTF-8 JSON file, at most 1 MiB; no executable config. */

@@ -2,11 +2,11 @@
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import metadata from '../package.json' with { type: 'json' };
-import { inspectRetirements, readRetirementConfig, createRetirementBackup, verifyRetirementBackup, restoreRetirementBackup } from '../src/node/index.mjs';
+import { inspectRetirements, validateLiveRetirement, readRetirementConfig, createRetirementBackup, verifyRetirementBackup, restoreRetirementBackup } from '../src/node/index.mjs';
 import { GitReleaseGuardError } from '../src/errors.mjs';
 
 const commands = ['preview', 'backup', 'verify-backup', 'restore-backup'];
-const help = `Usage: ehven-git-release-guardrails preview --config FILE [--cwd ROOT] [--json]
+const help = `Usage: ehven-git-release-guardrails preview --config FILE [--cwd ROOT] [--live] [--json]
        ehven-git-release-guardrails backup --config FILE --directory NEW [--cwd ROOT] [--json]
        ehven-git-release-guardrails verify-backup --directory DIR [--json]
        ehven-git-release-guardrails restore-backup --directory DIR --destination NEW [--json]
@@ -17,11 +17,15 @@ Preview integrated temporary branches using local Git and cached remote refs.
 Backup creates a new private directory outside source; it verifies isolated bare
 restoration before writing its completion manifest. Verify-backup repeats that
 proof. Restore-backup creates a fresh bare repository, never an existing target.
-These commands make no network request and do not change original source refs.
-Preview is not live remote proof or an execution authorization.
+Preview uses the local cache by default. --live compares that cache with the
+branches advertised by the approved endpoints. All commands preserve source
+refs. Live preview is a point-in-time observation.
 
 --config FILE          SchemaVersion 1 regular JSON file (at most 1 MiB).
 --cwd ROOT             Source root for preview/backup; default invocation directory.
+--live                 Request read-only live remote validation.
+--https-auth-endpoint URL  Exact approved HTTPS endpoint for authorization.
+--https-auth-env NAME      Environment variable containing Basic or Bearer value.
 --directory DIR        New backup output or existing backup input, by command.
 --destination NEW      New bare recovery directory for restore-backup.
 --timeout-ms N         Backup/verify/restore deadline, 1..30000; default 30000.
@@ -50,6 +54,7 @@ try {
       config: { type: 'string' }, cwd: { type: 'string' }, json: { type: 'boolean' },
       help: { type: 'boolean' }, version: { type: 'boolean' }, directory: { type: 'string' },
       destination: { type: 'string' }, 'timeout-ms': { type: 'string' }, 'max-backup-bytes': { type: 'string' },
+      live: { type: 'boolean' }, 'https-auth-endpoint': { type: 'string' }, 'https-auth-env': { type: 'string' },
     } });
     const names = parsed.tokens.filter(token => token.kind === 'option').map(token => token.name);
     if (new Set(names).size !== names.length) throw new Error();
@@ -64,13 +69,19 @@ try {
   } else {
     const command = positionals[0];
     if (positionals.length !== 1 || !commands.includes(command)) usage();
-    const allowed = command === 'preview' ? ['config', 'cwd', 'json']
+    const allowed = command === 'preview' ? ['config', 'cwd', 'json', 'live', 'https-auth-endpoint', 'https-auth-env']
       : command === 'backup' ? ['config', 'cwd', 'directory', 'json', 'timeout-ms', 'max-backup-bytes']
       : command === 'verify-backup' ? ['directory', 'json', 'timeout-ms', 'max-backup-bytes']
       : ['directory', 'destination', 'json', 'timeout-ms', 'max-backup-bytes'];
     if (Object.keys(values).some(name => !allowed.includes(name))) usage();
     if ((['preview', 'backup'].includes(command) && !values.config)
         || (command !== 'preview' && !values.directory) || (command === 'restore-backup' && !values.destination)) usage();
+    const authEndpoint = values['https-auth-endpoint'], authEnv = values['https-auth-env'];
+    let httpsAuthorization;
+    if (authEndpoint !== undefined || authEnv !== undefined) {
+      if (!values.live || !authEndpoint || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(authEnv ?? '')) usage();
+      httpsAuthorization = { endpoint: authEndpoint, value: process.env[authEnv] };
+    }
     const options = { signal: controller.signal };
     if (values.directory) options.directory = values.directory;
     for (const [flag, name] of [['timeout-ms', 'timeoutMs'], ['max-backup-bytes', 'maxBackupBytes']]) {
@@ -83,13 +94,18 @@ try {
     if (command === 'preview' || command === 'backup') {
       const config = await readRetirementConfig(values.config, { signal: controller.signal });
       const inspection = { ...config, cwd: resolve(values.cwd ?? process.cwd()) };
-      result = command === 'preview' ? await inspectRetirements({ ...inspection, signal: controller.signal })
-        : await createRetirementBackup({ ...options, inspection });
+      if (command === 'backup') result = await createRetirementBackup({ ...options, inspection });
+      else if (values.live) result = await validateLiveRetirement({ ...inspection, signal: controller.signal, httpsAuthorization });
+      else result = await inspectRetirements({ ...inspection, signal: controller.signal });
     } else if (command === 'verify-backup') result = await verifyRetirementBackup(options);
     else result = await restoreRetirementBackup({ ...options, destination: values.destination });
     if (json) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, command, result }) + '\n');
     else if (command === 'preview') {
-      process.stdout.write('Preview only. Remote freshness: unverified local cache. No network or ref changes.\n');
+      if (result.networkAccess) {
+        process.stdout.write(`Preview only. Live advertisements matched at ${result.observation.checkedAt}. No ref changes.\n`);
+      } else {
+        process.stdout.write('Preview only. Remote freshness: unverified local cache. No network or ref changes.\n');
+      }
       process.stdout.write(`Target: ${result.plan.target}\n`);
       for (const scope of ['remote', 'local']) {
         process.stdout.write(`${scope} temporary branches: ${result.plan[scope].length}\n`);

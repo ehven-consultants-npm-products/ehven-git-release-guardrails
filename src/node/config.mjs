@@ -1,7 +1,7 @@
 import { open, constants } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fields, text, list, branch, branchList, objectId } from '../validation.mjs';
-import { normalizeRemoteUrl, assertRemoteDestinations } from '../remote.mjs';
+import { assertRemoteDestinations } from '../remote.mjs';
 import { DEFAULT_TEMPORARY_PREFIXES } from '../plan.mjs';
 import { fail } from '../errors.mjs';
 
@@ -40,7 +40,7 @@ function configuration(value) {
     'permanent', 'reviewedHeads', 'temporaryPrefixes', 'timeoutMs', 'maxOutputBytes'], 'Configuration');
   if (data.schemaVersion !== 1) fail('ERR_CONFIG_SCHEMA', 'Use configuration schemaVersion 1.');
   const repository = text(data.repository, 'Repository identity');
-  const expectedRemoteUrls = list(data.expectedRemoteUrls, 'Expected remote URLs', 8).map(normalizeRemoteUrl);
+  const expectedRemoteUrls = list(data.expectedRemoteUrls, 'Expected remote URLs', 8);
   assertRemoteDestinations({ expectedRemoteUrls, fetchUrls: expectedRemoteUrls.slice(0, 1), pushUrls: expectedRemoteUrls.slice(0, 1) });
   const remote = data.remote === undefined ? 'origin' : text(data.remote, 'Remote name', 64);
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u.test(remote) || remote.includes('..')) fail('ERR_INPUT', 'Use a supported simple remote name.');

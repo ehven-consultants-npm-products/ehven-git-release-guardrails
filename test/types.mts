@@ -43,3 +43,9 @@ const recoveryPath: string = restored.destination; void recoveryPath;
 restoreRetirementBackup({ directory: '/backups/new', destination: '/recovery/new.git', force: true });
 // @ts-expect-error A backup requires explicit inspection policy and source.
 createRetirementBackup({ directory: '/backups/new' });
+
+import { validateLiveRetirement, type LiveInspectionResult } from '../src/node/index.mjs';
+const livePreview: LiveInspectionResult = await validateLiveRetirement({ ...configuration, cwd: '/project',
+  httpsAuthorization: { endpoint: 'https://example.test/team/repo.git', value: 'Bearer fixture' } });
+const matched: 'matched-live-advertisement' = livePreview.remoteFreshness;
+const network: true = livePreview.networkAccess; void matched; void network;

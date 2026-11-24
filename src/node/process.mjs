@@ -2,18 +2,28 @@ import { spawn } from 'node:child_process';
 import { GitReleaseGuardError, fail } from '../errors.mjs';
 
 /** Preserve configuration locations, but do not forward tokens or Git repository overrides. */
-export function inspectionEnvironment(isolatedConfig = false) {
+export function inspectionEnvironment(isolatedConfig = false, transport) {
   const result = Object.create(null);
   for (const key of ['PATH', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'XDG_CONFIG_HOME', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TMP', 'TEMP', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_NOSYSTEM']) {
     if (typeof process.env[key] === 'string') result[key] = process.env[key];
   }
   if (isolatedConfig) Object.assign(result, { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', XDG_CONFIG_HOME: '/dev/null' });
+  if (transport?.protocol === 'ssh' && typeof process.env.SSH_AUTH_SOCK === 'string') {
+    result.SSH_AUTH_SOCK = process.env.SSH_AUTH_SOCK;
+  }
+  if (transport?.authorization) {
+    Object.assign(result, {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.extraHeader',
+      GIT_CONFIG_VALUE_0: `Authorization: ${transport.authorization}`,
+    });
+  }
   return { ...result, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_OPTIONAL_LOCKS: '0',
     GIT_NO_LAZY_FETCH: '1', GIT_NO_REPLACE_OBJECTS: '1', LC_ALL: 'C' };
 }
 
 /** Internal bounded subprocess primitive; never uses a shell or logs output. */
-export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBytes, signal, isolatedConfig = false }) {
+export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBytes, signal, isolatedConfig = false, transport }) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000
       || !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1024 || maxOutputBytes > 16 * 1024 * 1024) {
     fail('ERR_INPUT', 'Subprocess limits are outside the supported bounds.');
@@ -26,7 +36,7 @@ export async function runBounded(executable, args, { cwd, timeoutMs, maxOutputBy
     // Own a process group on POSIX so cancellation also stops Git helpers that
     // inherited the output pipes. Never signal the caller's process group.
     const ownGroup = process.platform !== 'win32';
-    const child = spawn(executable, args, { cwd, env: inspectionEnvironment(isolatedConfig), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: ownGroup });
+    const child = spawn(executable, args, { cwd, env: inspectionEnvironment(isolatedConfig, transport), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: ownGroup });
     function stop(code, message) {
       failure ??= new GitReleaseGuardError(code, message);
       if (ownGroup && child.pid) {
