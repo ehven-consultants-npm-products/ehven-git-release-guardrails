@@ -3,17 +3,26 @@
 Portable guards for retiring integrated Git branches and checking deployment
 source identity. MIT licensed; zero npm runtime dependencies.
 
-## Development status
+## Install and preview
 
-This development candidate implements portable guards and bounded,
-local Git inspection through an optional Node entrypoint, and a retirement CLI
-with local and live read-only preview, verified backup and restoration, explicit
-branch retirement, and recovery from partial completion. Site acceptance and
-release verification are pending.
+```sh
+npm install --save-dev @ehven/git-release-guardrails
+npm exec -- ehven-git-release-guardrails --help
+```
 
-The development version is not published to npm. Do not replace an existing
-site integration with this partial candidate. Current verification uses Linux,
-Node 24.22.3 and Git 2.56.1; the release support matrix remains to be established.
+Start with a [retirement configuration](#retirement-cli-and-configuration) for
+the repository. Run `preview` and inspect the result before requesting live
+validation. Use `apply` only with the reviewed plan ID from `preview --live`.
+
+The Node package is ESM and requires Node 24.22.3 or later in the Node 24 line.
+The CLI and Node subpath are supported on Linux and macOS with Git 2.56.1 or
+later and a local filesystem with the documented POSIX protections. The release
+tests exercise Linux and macOS 26 ARM64 with Node 24.22.3 and Git 2.56.1.
+The portable entrypoint does not require Git.
+
+Use [GitHub Issues](https://github.com/ehven-consultants-npm-products/ehven-git-release-guardrails/issues)
+for reproducible bugs. Report suspected vulnerabilities privately as described
+in [SECURITY.md](https://github.com/ehven-consultants-npm-products/ehven-git-release-guardrails/blob/main/SECURITY.md).
 
 ## Portable API
 
@@ -87,10 +96,10 @@ with unique history stop the plan. Unknown nonpermanent branches stop the plan,
 even when they point to the target. Plan inputs are copied and validated before
 the first ancestry callback; the original inputs are not mutated.
 
-This is a snapshot plan, not an execution authorization token. A future executor
-must re-inspect and validate relevant live state, destinations, worktrees and
-review evidence before consequential operations. It cannot assume the plan
-remains current or that remote and local mutations share a transaction.
+This is a snapshot plan. Use the [live CLI preview](#live-retirement-preview)
+to obtain an execution plan ID. Apply re-inspects relevant live state,
+destinations, worktrees and review evidence before changing refs. Remote and
+local changes commit in separate transactions.
 
 ### assertDeploymentSource(options)
 
@@ -109,8 +118,8 @@ branch identity. Returns `{ target, sha }`; it performs no deployment.
 
 Plain metadata can be fabricated by a caller. Passing this guard does not prove
 remote branch state, successful CI, human approval, the identity of build output
-or the revision currently live. Optional Cloudflare behavior will remain an
-explicit adapter, independent of this portable entrypoint.
+or the revision currently live. The guard works with a caller-owned deploy
+command, including a site-owned Cloudflare wrapper.
 
 ### Errors
 
@@ -146,8 +155,10 @@ in returned plans remain consumer-controlled data.
 - Expect proof metadata and stable sorted arrays in returned plans.
 - Supply exact empty porcelain status for deployment checks. Attached local/CI
   conflicts are rejected; trusted detached CI remains supported.
-- Defer site replacement until the complete CLI and recovery behavior have been
-  verified and the actual package has been deliberately adopted.
+- Install the package normally and redirect all imports and retirement commands
+  to the installed version. Keep any provider-specific deployment invocation
+  in the consumer and import `assertDeploymentSource` there. Remove the old
+  candidate after verifying the replacement on an isolated copy.
 
 ## Remote endpoint guard
 
@@ -187,8 +198,7 @@ const inspection = await inspectRetirements({
 ```
 
 This explicitly selected API requires Git. The root portable entrypoint does
-not import it. Current executable verification is Linux/Node 24/Git 2.56.1;
-additional operating systems and minimum Git versions remain release gates.
+not import it. Use the supported Node, Git and platform versions listed above.
 
 The inspector runs from a real repository root with an attached integration
 branch and clean tracked/untracked source. It requires full local history, no
@@ -256,8 +266,9 @@ Synthetic fixtures are not a second real consumer or a full security assessment.
 
 ## Retirement CLI and configuration
 
-The installed executable is `ehven-git-release-guardrails`. This development
-candidate supports preview, backup, verify-backup and restore-backup. Preview supports an explicit read-only live comparison.
+The installed executable is `ehven-git-release-guardrails`. It supports preview,
+backup, verification, restoration, apply and recovery. Preview uses cached refs
+by default. Pass `--live` for a read-only comparison with the approved remote.
 
 ```sh
 ehven-git-release-guardrails --help
@@ -473,8 +484,8 @@ resolved deliberately, not sandboxed. Observed source/input changes are refused;
 checks do not lock out arbitrary concurrent writers or detect every transient
 change. Apply revalidates live refs against the approved plan.
 
-Current executable verification is Linux/Node 24/Git 2.56.1. Unsupported POSIX
-protections are refused; Windows is not supported for backup/recovery. Uncertain
+Backup and recovery require the documented POSIX protections and are tested
+on Linux and macOS. Uncertain
 worktree metadata, including separate-Git-dir layouts whose worktree listing
 conflicts with the supplied source root, remains refused by inspection.
 

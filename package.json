@@ -1,12 +1,25 @@
 {
   "name": "@ehven/git-release-guardrails",
-  "version": "0.0.0-development.6",
-  "private": true,
+  "version": "1.0.0",
   "type": "module",
   "license": "MIT",
   "description": "Portable Git release guards with verified backups, guarded retirement and recovery.",
+  "author": "Ehventerprise LLC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ehven-consultants-npm-products/ehven-git-release-guardrails.git"
+  },
+  "homepage": "https://github.com/ehven-consultants-npm-products/ehven-git-release-guardrails#readme",
+  "bugs": {
+    "url": "https://github.com/ehven-consultants-npm-products/ehven-git-release-guardrails/issues"
+  },
+  "keywords": ["git", "branch-retirement", "release", "backup", "recovery", "cli"],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "engines": {
-    "node": "24.x"
+    "node": ">=24.22.3 <25"
   },
   "exports": {
     ".": {
@@ -20,7 +33,9 @@
   },
   "files": [
     "src",
-    "bin"
+    "bin",
+    "CHANGELOG.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs"
