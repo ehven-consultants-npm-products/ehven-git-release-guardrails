@@ -10,8 +10,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   verify:
-    name: Verify portable guards
-    runs-on: ubuntu-latest
+    name: ${{ matrix.check }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            check: Verify portable guards
+          - os: macos-26
+            check: Verify CLI on macOS
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -20,6 +28,15 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24.22.3
+      - name: Select OpenSSL for the local TLS fixture
+        if: runner.os == 'macOS'
+        shell: bash
+        run: printf '%s\n' "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+      - name: Record tool versions
+        run: |
+          node --version
+          git --version
+          openssl version
       # No install: this development candidate has no npm dependencies.
       - run: npm test
   required:

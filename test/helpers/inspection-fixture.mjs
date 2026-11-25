@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 export function inspectionFixture(t, format = 'sha1') {
-  const directory = mkdtempSync(join(tmpdir(), 'git guardrails inspect ')), root = join(directory, 'working tree');
+  const directory = mkdtempSync(join(realpathSync(tmpdir()), 'git guardrails inspect '));
+  const root = join(directory, 'working tree');
   mkdirSync(root);
   const global = join(directory, 'empty-global-config'); writeFileSync(global, '');
   const saved = Object.fromEntries(['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM'].map(key => [key, process.env[key]]));
