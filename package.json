@@ -19,7 +19,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=24.22.3 <25"
+    "node": ">=24.19.0 <25"
   },
   "exports": {
     ".": {

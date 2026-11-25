@@ -14,10 +14,11 @@ Start with a [retirement configuration](#retirement-cli-and-configuration) for
 the repository. Run `preview` and inspect the result before requesting live
 validation. Use `apply` only with the reviewed plan ID from `preview --live`.
 
-The Node package is ESM and requires Node 24.22.3 or later in the Node 24 line.
+The Node package is ESM and requires Node 24.19.0 or later in the Node 24 line.
 The CLI and Node subpath are supported on Linux and macOS with Git 2.56.1 or
 later and a local filesystem with the documented POSIX protections. The release
-tests exercise Linux and macOS 26 ARM64 with Node 24.22.3 and Git 2.56.1.
+tests exercise Linux with Node 24.19.0 and macOS 26 ARM64 with Node 24.22.3,
+using Git 2.56.1.
 The portable entrypoint does not require Git.
 
 Use [GitHub Issues](https://github.com/ehven-consultants-npm-products/ehven-git-release-guardrails/issues)

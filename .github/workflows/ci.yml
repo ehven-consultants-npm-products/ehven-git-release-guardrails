@@ -18,8 +18,10 @@ jobs:
         include:
           - os: ubuntu-latest
             check: Verify portable guards
+            node: 24.19.0
           - os: macos-26
             check: Verify CLI on macOS
+            node: 24.22.3
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -27,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: 24.22.3
+          node-version: ${{ matrix.node }}
       - name: Select OpenSSL for the local TLS fixture
         if: runner.os == 'macOS'
         shell: bash
