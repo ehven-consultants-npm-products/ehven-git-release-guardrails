@@ -140,8 +140,14 @@ test('enforces output/inspection deadlines and supports cancellation', async t =
 });
 
 test('refuses non-UTF-8 branch output and symbolic non-HEAD branch refs', async t => {
-  const f = inspectionFixture(t), path = Buffer.concat([Buffer.from(join(f.root, '.git', 'refs', 'heads', 'feat') + '/'), Buffer.from([255])]);
-  writeFileSync(path, f.target + '\n'); await assert.rejects(inspectRetirements(f.options), { code: 'ERR_GIT_ENCODING' }); rmSync(path);
+  const f = inspectionFixture(t), packed = join(f.root, '.git', 'packed-refs');
+  // macOS rejects non-UTF-8 filenames before they reach Git. A packed ref
+  // exercises the same Git output without relying on loose-ref filenames.
+  writeFileSync(packed, Buffer.concat([
+    Buffer.from(`${f.target} refs/heads/feat/`), Buffer.from([0xff, 0x0a]),
+  ]), { flag: 'wx' });
+  await assert.rejects(inspectRetirements(f.options), { code: 'ERR_GIT_ENCODING' });
+  rmSync(packed);
   f.git('symbolic-ref', 'refs/remotes/origin/feat/symbolic', 'refs/remotes/origin/main');
   await assert.rejects(inspectRetirements(f.options), { code: 'ERR_SYMBOLIC_REF' });
 });
